@@ -1,2 +1,3 @@
 # LLMCL-DeepSpeed
-implementation of some classical CL methods using deepseed
+
+implementation of some classical continual learning methods using deepseed
