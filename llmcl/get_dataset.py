@@ -1,4 +1,4 @@
-import torch
+import torch, os, json
 from pathlib import Path
 from typing import Any, List, Dict, Tuple, Callable, Optional, Union
 from transformers import PreTrainedTokenizerBase
@@ -7,11 +7,11 @@ from datasets import load_dataset, Dataset
 
 def format_data(data: Dict, chat: bool = False) -> Tuple[str, str]:
 	if not chat:
-		if data.get('input'):
+		if data.get('input', None):
 			prompt = "Instruction:\n" + data.get('instruction') + "\n" + "Input:\n" + data.get('input') + "\nOutput:\n"
 		else:
-			prompt = "Input\n" + data.get('instruction') + "\nOutput:\n"
-		return prompt, data.get('output')
+			prompt = "Input\n" + data.get('prompt') + "\nOutput:\n"
+		return prompt, data.get('answer')
 	else:
 		raise NotImplementedError("Chat format not implemented yet.")
 
@@ -20,7 +20,7 @@ def tokenize_data(tokenizer: PreTrainedTokenizerBase, max_length: int = 2048) ->
 	[Dict], Dict[str, torch.Tensor]]:
 	def tokenize(data: Dict) -> Dict[str, torch.Tensor]:
 		prompt, output = format_data(data)
-		tokenized = tokenizer(prompt + output, return_tensors="pt", padding=True, max_length=max_length)
+		tokenized = tokenizer(prompt + output, return_tensors="pt", padding='max_length', max_length=max_length)
 		labels = tokenized['input_ids'].clone()
 		prompt_len = len(tokenizer(prompt)['input_ids'])
 		labels[:prompt_len] = -100  # ignore loss for prompt tokens
@@ -33,15 +33,24 @@ def tokenize_data(tokenizer: PreTrainedTokenizerBase, max_length: int = 2048) ->
 
 
 def get_dataset(data_dir: Union[Path, str], tokenizer: PreTrainedTokenizerBase, max_length: int = 2048) -> Dataset:
-	if not data_dir.exists():
+	if not os.path.exists(data_dir):
 		raise FileNotFoundError(f"{data_dir} does not exist.")
-	data: Dataset = load_dataset("json", data_files=[data_dir], field="data", split="train")
-	tokenized_data = data.map(tokenize_data(tokenizer=tokenizer, max_length=max_length), batched=True)
+	data = Dataset.from_list(json.loads(open(data_dir, 'r').read()))
+	# data: Dataset = load_dataset("json", data_files=[data_dir], field="data", split="train")
+	tokenized_data = data.map(tokenize_data(tokenizer=tokenizer, max_length=max_length), batched=False)
 	return tokenized_data
 
 
 def get_datasets(args, tokenizer) -> Dict[str, Dataset]:
 	task_datasets = {}
-	for name, path in args.data_dir.items():
-		task_datasets[name] = get_dataset(path, tokenizer, args.max_length)
+	for name in args.dataset_names.split(','):
+		task_datasets[name] = get_dataset(os.path.join(args.data_path, name, 'train.json'), tokenizer, args.max_length)
 	return task_datasets
+
+if __name__ == "__main__":
+	data_dir = "/hhd/lixinlong/code/LLMCL-DeepSpeed/data/TRACE-Benchmark/LLM-CL-Benchmark_5000/C-STANCE/train.json"
+	from transformers import AutoTokenizer
+	tokenizer = AutoTokenizer.from_pretrained("/hhd/lixinlong/model_base/official_model/Qwen2.5-7B-Instruct")
+	if not tokenizer.pad_token:
+		tokenizer.pad_token = tokenizer.eos_token
+	dataset = get_dataset(data_dir, tokenizer)

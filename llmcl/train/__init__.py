@@ -1,10 +1,2 @@
-from sympy import im
-from get_args import *
-from .methods.vanilla import *
-from .methods.ewc import *
-
-TRAINERS = {
-    "vanilla": VanillaTrainer,
-    "ewc": EWCTrainer
-}
-
+from .get_args import get_train_args, CLTrainingArguments
+from .get_optimizer import get_optimizer, get_grouped_parameters
