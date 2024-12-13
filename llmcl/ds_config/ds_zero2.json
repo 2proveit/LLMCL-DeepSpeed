@@ -14,12 +14,15 @@
         "round_robin_gradients": true
     },
     "fp16": {
-        "enabled": true,
+        "enabled": false,
         "auto_cast": true,
         "loss_scale": "auto",
         "loss_scale_window": "auto",
         "hysteresis": "auto",
         "min_loss_scale": "auto"
+    },
+    "bf16":{
+        "enabled":true
     },
     "gradient_accumulation_steps": "auto",
     "train_batch_size": "auto",

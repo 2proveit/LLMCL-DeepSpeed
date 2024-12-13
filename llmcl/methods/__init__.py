@@ -1,5 +1,5 @@
-from vanilla import *
-from ewc import *
+from .vanilla import *
+from .ewc import *
 
 TRAINERS = {
     "vanilla": VanillaTrainer,

@@ -13,14 +13,8 @@ logger = logging.getLogger(__name__)
 
 
 class EWCTrainer(VanillaTrainer):
-    def __init__(self, model, optimizer, lr_scheduler, datasets, args):
-        super().__init__(model, optimizer, lr_scheduler, datasets, args)
-        self.ewc_lambda = args.ewc_lambda
-        self.ewc_task_name
-
-        self.fisher = {}
-        self.prior = {}
-        self.gloabl_step = 0
+    def __init__(self, model:Union[torch.nn.Module], datasets, args, tokenizer, ewc_lambda):
+        super().__init__(model, datasets, args, tokenizer)
 
     def compute_ewc_reg_loss(self):
         ewc_reg_loss = 0
@@ -65,7 +59,7 @@ class EWCTrainer(VanillaTrainer):
 
                 if self.args.global_rank == 0:
                     tqdm_bar.update(1)
-                    description = f"Epoch {epoch+1}, Step {step}, Loss: {loss.item():.4f}"
+                    description = f"Epoch {epoch+1}, Step {step+1}, Loss: {loss.item():.4f}"
                     tqdm_bar.set_description(description, refresh=False)
 
                 self.model.backward(loss)
@@ -79,6 +73,6 @@ class EWCTrainer(VanillaTrainer):
     def continual_learning(self):
         self.fisher = {n: p.detach().clone().data.zero_() for n, p in self.model.named_parameters() if p.requires_grad}
         for i, (task_name, dataset) in enumerate(self.datasets.items()):
-            self._process_model(task_name, task_idx=i)
-            train_loader = self._process_train_dataloader(dataset)
+            self._init_model(task_name, task_idx=i)
+            train_loader = self._init_train_dataloader(dataset)
             self.train_task(task_name, train_loader)
