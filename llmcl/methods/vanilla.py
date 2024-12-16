@@ -98,8 +98,8 @@ class VanillaTrainer:
     def _at_back_propagation(self, task:str):
         pass
              
-    def save_model(self, task:str, epoch:int):
-        save_dir = os.path.join(self.args.output_dir, f"{self.args.cl_method}_{task}_round_{epoch}")
+    def save_model(self, task:str, epoch:int, desc:str=''):
+        save_dir = os.path.join(self.args.output_dir, f"{self.args.cl_method}_{task}_round_{epoch}_desc_{desc}")
         logger.info(f"Saving to: {save_dir}")
         if self.args.local_rank in [-1, 0]:
            save_model_tokenizer(model=self.model, tokenizer=self.tokenizer, output_dir=save_dir) 
@@ -126,7 +126,7 @@ class VanillaTrainer:
 
                 self.model.backward(loss)
                 self.model.step()
-            self.save_model(task_name, epoch)
+            self.save_model(task_name, epoch, f"loss_{loss.item():.4f}")
             
              
     def continual_learning(self):

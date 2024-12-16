@@ -102,7 +102,7 @@ class EWCTrainer(VanillaTrainer):
                 self._at_back_propagation(task_name)
                 self.model.step()
 
-            self.save_model(task_name, epoch)
+            self.save_model(task_name, epoch, desc=f"loss_{loss.item():.4f}")
         self._at_task_end()
             
     @override 
