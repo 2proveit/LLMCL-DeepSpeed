@@ -12,7 +12,7 @@ class CLTrainingArguments(TrainingArguments):
     max_length: int = 1024
     dataset_names: str = "20Minuten,FOMC,MeetingBank,NumGLUE-ds,ScienceQA,C-STANCE,NumGLUE-cm"
     cl_method: str = "vanilla"  # 添加 cl_method 参数
-
+    ewc_lambda:float=0.5
     lora_config:LoraConfig=field(default_factory=lambda: LoraConfig(
         r=16, target_modules=["q_proj", "v_proj"]))
 

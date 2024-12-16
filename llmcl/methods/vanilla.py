@@ -6,7 +6,7 @@ from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data import RandomSampler, DataLoader
 from llmcl.utils import save_model_tokenizer
 from typing import Union
-from transformers import AutoModel, get_cosine_schedule_with_warmup
+from transformers import AutoModel, get_cosine_schedule_with_warmup, PreTrainedTokenizerBase
 from deepspeed.ops.adam import FusedAdam
 from datasets import Dataset
 from llmcl.train.get_args import CLTrainingArguments
@@ -17,7 +17,11 @@ logger = logging.getLogger(__name__)
 
 
 class VanillaTrainer:
-    def __init__(self, model:Union[torch.nn.Module, AutoModel],datasets:Dict[str, Dataset], args:CLTrainingArguments, tokenizer):
+    def __init__(self, model:Union[torch.nn.Module, AutoModel],
+                 datasets:Dict[str, Dataset], 
+                 args:CLTrainingArguments, 
+                 tokenizer:PreTrainedTokenizerBase,
+                ):
         self.model = model
         self.tokenizer = tokenizer
         self.datasets = datasets
