@@ -2,8 +2,7 @@
 port=$(shuf -i25000-30000 -n1)
 export PYTHONPATH=$(pwd)/llmcl:$PYTHONPATH
 cl_method=ewc
-deepspeed --include=localhost:0,1 --master_port $port llmcl/main.py \
-   --deepspeed llmcl/ds_config/ds_zero2.json \
+deepspeed --include=localhost:0,1 --master_port $port llmcl/main.py --deepspeed \
    --seed 42 \
    --data_path data/TRACE-Benchmark/LLM-CL-Benchmark_5000 \
    --dataset_names C-STANCE,FOMC \
@@ -15,4 +14,5 @@ deepspeed --include=localhost:0,1 --master_port $port llmcl/main.py \
    --num_train_epochs 3 \
    --warmup_ratio 0.03 \
    --cl_method $cl_method \
-   --output_dir output/$cl_method > logs/train_${cl_method}.log 2>&1 &
+   --output_dir output/$cl_method \
+   --deepspeed_config llmcl/ds_config/ds_zero2.json > logs/train_${cl_method}.log 2>&1 &

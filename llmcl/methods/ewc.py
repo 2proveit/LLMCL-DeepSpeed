@@ -14,45 +14,70 @@ logger = logging.getLogger(__name__)
 
 
 class EWCTrainer(VanillaTrainer):
-    def __init__(self, model:Union[torch.nn.Module, AutoModel],
-                 datasets:Dict[str, Dataset],
-                 args:CLTrainingArguments,
-                 tokenizer:PreTrainedTokenizerBase
-                ):
+    def __init__(self, model: Union[torch.nn.Module, AutoModel],
+                 datasets: Dict[str, Dataset],
+                 args: CLTrainingArguments,
+                 tokenizer: PreTrainedTokenizerBase):
         super().__init__(model, datasets, args, tokenizer)
         self.ewc_lambda = self.args.ewc_lambda
         self.prior = {}
         self.fisher = {}
-        self.ewc_loss:float = -1
-
+        self.grads = {} 
+        self.ewc_loss: float = -1
+        
+    def save_grad(self, name):
+        def hook(grad):
+            # if torch.all(grad.eq(0)):
+            #     logger.info(f"name: {name} is all zero !!!")
+            grad = torch.nan_to_num(grad, nan=0.0) 
+            self.grads[name] = grad.detach().clone().to(self.args.device)
+        return hook
+    
+    def retain_grad(self):
+        for name, param in self.model.named_parameters():
+            if name in self.fisher and param.requires_grad:
+                param.register_hook(self.save_grad(name))
+    
     def _init_model(self):
         assert not isinstance(self.model, PeftModel)
         self.model = get_peft_model(self.model, peft_config=self.args.lora_config)
-        logger.info("** model initilized!")
+        logger.info("** model initialized!")
         if isinstance(self.model, PeftModel):
             self.model.print_trainable_parameters()
         self.prior = {n: p.detach().clone().to(self.args.device) for n, p in self.model.named_parameters() if p.requires_grad}
         self.fisher = {n: torch.zeros_like(p.data.detach().clone(), device=self.args.device, dtype=p.dtype) for n, p in self.model.named_parameters() if p.requires_grad}
+
+        self.retain_grad()
+
     
     def compute_ewc_reg_loss(self):
         ewc_reg_loss = 0
         for n, p in self.model.module.named_parameters():
             if n in self.fisher:
-                ewc_reg_loss += (self.fisher[n] * (safe_get_full_fp32_param(p) - self.prior[n]).pow(2)).sum() * self.ewc_lambda / 2
+                p_weight = safe_get_full_fp32_param(p)
+                # if torch.equal(p_weight, self.prior[n]):
+                #     logger.warning(f"name: {n} weight same as prior")
+                # if torch.all(self.fisher[n].eq(0)):
+                #     logger.warning(f"name: {n} fisher all zero")
+                ewc_reg_loss += (self.fisher[n] * (p_weight - self.prior[n]).pow(2)).sum() * self.ewc_lambda / 2
         self.ewc_loss = ewc_reg_loss.item()
-        return ewc_reg_loss 
+        return ewc_reg_loss
+
     
-    @override 
+    @override
     def _at_task_end(self):
         for n, p in self.model.module.named_parameters():
             if p.requires_grad:
                 self.prior[n] = p.detach().clone().data.to(self.args.device)
      
     @override
-    def _at_back_propagation(self, task:str):
+    def _at_back_propagation(self, task: str):
         for n, p in self.model.module.named_parameters():
             if n in self.fisher and p.requires_grad:
-                self.fisher[n] += safe_get_full_grad(p).detach().clone().data.to(self.args.device) / len(self.dataloaders[task])
+                if n in self.grads:
+                    # if torch.all(self.grads[n].eq(0)):
+                    #     logger.error(f"n: {n} grads is none!!")
+                    self.fisher[n] += self.grads[n] ** 2 / len(self.dataloaders[task])  # 更新 Fisher 信息
 
     @override
     def train_task(self, task_name:str, dataloader:DataLoader):
@@ -76,7 +101,7 @@ class EWCTrainer(VanillaTrainer):
                 self.model.backward(loss)
                 self._at_back_propagation(task_name)
                 self.model.step()
-                
+
             self.save_model(task_name, epoch)
         self._at_task_end()
             

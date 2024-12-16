@@ -4,7 +4,7 @@ from typing import Dict
 import torch, logging, tqdm, os
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data import RandomSampler, DataLoader
-from llmcl.utils import save_model_tokenizer
+from llmcl.utils import save_model_tokenizer, get_grouped_parameters
 from typing import Union
 from transformers import AutoModel, get_cosine_schedule_with_warmup, PreTrainedTokenizerBase
 from deepspeed.ops.adam import FusedAdam
@@ -47,9 +47,11 @@ class VanillaTrainer:
     
     def _get_optim_lr_scheduler(self) -> tuple:
         """make sure you initilized the train loader and model for your current task"""
+        optimize_grouped_params = self.model.parameters()
         optimizer = FusedAdam(
-            filter(lambda p: p.requires_grad, self.model.parameters()),
+            optimize_grouped_params,
             lr=self.args.learning_rate,
+            weight_decay=self.args.weight_decay
         )
         assert self.dataloaders, "self.datloaders is null"
         self.update_steps = math.ceil(sum(len(train_loader) * self.args.num_train_epochs / self.args.gradient_accumulation_steps for train_loader in self.dataloaders.values()))
@@ -71,7 +73,8 @@ class VanillaTrainer:
     def _initilize_deepspeed(self) -> None:
         optimizer, lr_scheduler = self._get_optim_lr_scheduler()
 
-        ds_config = json.loads(open(self.args.deepspeed, 'r').read()) # overwrite some deepspeed configs
+        with open(self.args.deepspeed_config, 'r') as f:
+            ds_config = json.loads(f.read())
         ds_config["train_micro_batch_size_per_gpu"]= self.args.per_device_train_batch_size
         ds_config["gradient_accumulation_steps"]= self.args.gradient_accumulation_steps
         ds_config['train_batch_size'] = self.args.per_device_train_batch_size * self.args.gradient_accumulation_steps * self.args.world_size
