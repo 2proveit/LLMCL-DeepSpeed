@@ -1,6 +1,6 @@
 {
     "zero_optimization": {
-        "stage": 2,
+        "stage": 1,
         "offload_optimizer": {
             "device": "auto",
             "pin_memory": true
@@ -25,7 +25,6 @@
         "enabled":true
     },
     "gradient_accumulation_steps": "auto",
-    "gradient_clipping": 1.0,
     "train_batch_size": "auto",
     "train_micro_batch_size_per_gpu": "auto",
     "steps_per_print": "auto",

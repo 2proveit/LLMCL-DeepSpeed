@@ -4,6 +4,18 @@ from typing import Any, List, Dict, Tuple, Callable, Optional, Union
 from transformers import PreTrainedTokenizerBase
 from datasets import load_dataset, Dataset
 
+class Collector:
+    def __call__(self, batch):
+        input_ids = [item['input_ids'] for item in batch]
+        attention_mask = [item['attention_mask'] for item in batch]
+        labels = [item['labels'] for item in batch]
+        return dict(
+            input_ids=torch.tensor(input_ids, dtype=torch.int64),
+            attention_mask=torch.tensor(attention_mask, dtype=torch.int64),
+            labels=torch.tensor(labels, dtype=torch.int64)
+		)
+            
+      
 
 def format_data(data: Dict, chat: bool = False) -> Tuple[str, str]:
 	if not chat:
@@ -20,8 +32,8 @@ def tokenize_data(tokenizer: PreTrainedTokenizerBase, max_length: int = 2048) ->
 	[Dict], Dict[str, torch.Tensor]]:
 	def tokenize(data: Dict) -> Dict[str, torch.Tensor]:
 		prompt, output = format_data(data)
-		tokenized = tokenizer(prompt + output, return_tensors="pt", padding='max_length', max_length=max_length)
-		labels = tokenized['input_ids'].clone()
+		tokenized = tokenizer(prompt + output, return_tensors="pt", padding='max_length', max_length=max_length, truncation=True)
+		labels = tokenized['input_ids'].clone()[0]
 		prompt_len = len(tokenizer(prompt)['input_ids'])
 		labels[:prompt_len] = -100  # ignore loss for prompt tokens
 		return dict(
@@ -54,3 +66,4 @@ if __name__ == "__main__":
 	if not tokenizer.pad_token:
 		tokenizer.pad_token = tokenizer.eos_token
 	dataset = get_dataset(data_dir, tokenizer)
+	dataset[0]['labels']
