@@ -91,7 +91,18 @@ class EWCTrainer(VanillaTrainer):
                 batch = {k: v.to(self.args.device) for k, v in batch.items()}
                 model_outputs = self.model(**batch)
                 loss = model_outputs.loss
-                loss += self.compute_ewc_reg_loss()
+                ewc_reg_loss = self.compute_ewc_reg_loss()
+                loss += ewc_reg_loss
+
+                self.global_steps += 1
+                self.writer.add_scalar(f'Loss/{task_name}', loss.item(), step)
+                self.writer.add_scalar(f'ewc_Loss/{task_name}', ewc_reg_loss.item(), step)
+                self.writer.add_scalars('Loss/global_vs_task', {
+                    'global_step': self.global_step,
+                    f'{task_name}_step': step,
+                }, self.global_step)
+                self.writer.add_scalar(f'ewc_Loss/global', ewc_reg_loss.item(), self.global_steps)
+                self.writer.add_scalar(f'Lr', self.lr_scheduler.get_lr(), self.global_steps)
 
                 if self.args.global_rank == 0:
                     tqdm_bar.update(1)
@@ -110,5 +121,7 @@ class EWCTrainer(VanillaTrainer):
         self._init_train_dataloader()
         self._init_model()
         self._initilize_deepspeed()
+        self.writer.add_hparams({'ewc_lambda': self.ewc_lambda})
         for i, (task_name, train_loader) in enumerate(self.dataloaders.items()):
             self.train_task(task_name, train_loader)
+        self.writer.close()
