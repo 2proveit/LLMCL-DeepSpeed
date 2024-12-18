@@ -1,6 +1,7 @@
 .idea/
 .vscode/
 data/
-output/
+output*
 __pycache__/
 logs/
+infer_output/
