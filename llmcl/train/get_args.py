@@ -16,9 +16,8 @@ class CLTrainingArguments(TrainingArguments):
     deepspeed_config:str = ''
     ewc_lambda:float=0.5
     lora_config:LoraConfig=field(default_factory=lambda: LoraConfig(
-        r=16, target_modules=["q_proj", "v_proj"]),
-        bias='none', task_type='CAUSAL_LM'
-)
+        r=16, target_modules=["q_proj", "v_proj"],
+        bias='none', task_type='CAUSAL_LM'))
 
 def get_train_args():
     parser = HfArgumentParser(CLTrainingArguments)

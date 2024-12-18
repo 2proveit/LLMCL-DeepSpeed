@@ -53,17 +53,9 @@ def get_dataset(data_dir: Union[Path, str], tokenizer: PreTrainedTokenizerBase, 
 	return tokenized_data
 
 
-def get_datasets(args, tokenizer) -> Dict[str, Dataset]:
+def get_datasets(args, tokenizer, split='train') -> Dict[str, Dataset]:
 	task_datasets = {}
 	for name in args.dataset_names.split(','):
-		task_datasets[name] = get_dataset(os.path.join(args.data_path, name, 'train.json'), tokenizer, args.max_length)
+		task_datasets[name] = get_dataset(os.path.join(args.data_path, name, f'{split}.json'), tokenizer, args.max_length)
 	return task_datasets
 
-if __name__ == "__main__":
-	data_dir = "/hhd/lixinlong/code/LLMCL-DeepSpeed/data/TRACE-Benchmark/LLM-CL-Benchmark_5000/C-STANCE/train.json"
-	from transformers import AutoTokenizer
-	tokenizer = AutoTokenizer.from_pretrained("/hhd/lixinlong/model_base/official_model/Qwen2.5-7B-Instruct")
-	if not tokenizer.pad_token:
-		tokenizer.pad_token = tokenizer.eos_token
-	dataset = get_dataset(data_dir, tokenizer)
-	dataset[0]['labels']
