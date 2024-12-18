@@ -82,6 +82,7 @@ class EWCTrainer(VanillaTrainer):
     @override
     def train_task(self, task_name:str, dataloader:DataLoader):
         tqdm_bar = tqdm.tqdm(self.update_steps, desc=f"Training {task_name}", disable=not self.args.local_rank in [-1, 0])  
+        task_step = -1
 
         for epoch in range(int(self.args.num_train_epochs)):
             if self.args.local_rank in [-1, 0]:
@@ -94,15 +95,16 @@ class EWCTrainer(VanillaTrainer):
                 ewc_reg_loss = self.compute_ewc_reg_loss()
                 loss += ewc_reg_loss
 
+                task_step += 1
                 self.global_steps += 1
-                self.writer.add_scalar(f'Loss/{task_name}', loss.item(), step)
-                self.writer.add_scalar(f'ewc_Loss/{task_name}', ewc_reg_loss.item(), step)
-                self.writer.add_scalars('Loss/global_vs_task', {
-                    'global_step': self.global_step,
-                    f'{task_name}_step': step,
-                }, self.global_step)
+                self.writer.add_scalar(f'Loss/{task_name}', loss.item(), task_step)
+                self.writer.add_scalar(f'ewc_Loss/{task_name}', ewc_reg_loss.item(), task_step)
+                self.writer.add_scalars('Loss', {
+                    'loss': loss.item(),
+                    'ewc_loss': ewc_reg_loss.item(),
+                }, self.global_steps)
                 self.writer.add_scalar(f'ewc_Loss/global', ewc_reg_loss.item(), self.global_steps)
-                self.writer.add_scalar(f'Lr', self.lr_scheduler.get_lr(), self.global_steps)
+                self.writer.add_scalar(f'Lr', self.lr_scheduler.get_lr()[0], self.global_steps)
 
                 if self.args.global_rank == 0:
                     tqdm_bar.update(1)
@@ -121,7 +123,8 @@ class EWCTrainer(VanillaTrainer):
         self._init_train_dataloader()
         self._init_model()
         self._initilize_deepspeed()
-        self.writer.add_hparams({'ewc_lambda': self.ewc_lambda})
+        self.writer.add_hparams({'ewc_lambda': self.ewc_lambda}, {"loss": 0.0})
         for i, (task_name, train_loader) in enumerate(self.dataloaders.items()):
             self.train_task(task_name, train_loader)
+        self._log_hparams()
         self.writer.close()
