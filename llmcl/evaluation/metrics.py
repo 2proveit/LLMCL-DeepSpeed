@@ -45,7 +45,7 @@ def eval_Py150(response, answers:List):
             continue
         scores += fuzz.ratio(res, ans)
     avg_score = scores / len(response)
-    return avg_score
+    return avg_score / 100
 
 
 
