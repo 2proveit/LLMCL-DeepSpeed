@@ -22,8 +22,11 @@ def eval_FOMC(response:List, answers:List):
 rouger = Rouge()
 def eval_MeetingBank(response:List, answers:List):
     res = []
-    for resp, ans in zip(response, answers):
-        res.append(rouger.get_scores(hyps=resp, refs=ans)[0]['rouge-l']['p'])
+    for i,(resp, ans) in enumerate(zip(response, answers)):
+        try:
+            res.append(rouger.get_scores(hyps=resp, refs=ans)[0]['rouge-l']['p'])
+        except:
+            print(resp,'\n', ans)
     return sum(res) / len(res)
 
 
