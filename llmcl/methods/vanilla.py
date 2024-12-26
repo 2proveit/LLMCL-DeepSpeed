@@ -1,13 +1,14 @@
 #!/usr/bin/env python
 import deepspeed, math, json
 from typing import Dict
+import torch.distributed
 import torch, logging, tqdm, os
 from torch.utils.data.distributed import DistributedSampler
 from torch.utils.data import RandomSampler, DataLoader
 from torch.utils.tensorboard import SummaryWriter
 from llmcl.utils import save_model_tokenizer, get_grouped_parameters
 from typing import Union
-from transformers import AutoModel, get_cosine_schedule_with_warmup, PreTrainedTokenizerBase
+from transformers import AutoModel, get_cosine_schedule_with_warmup,get_constant_schedule_with_warmup, PreTrainedTokenizerBase
 from deepspeed.ops.adam import FusedAdam
 from datasets import Dataset
 from llmcl.train.get_args import CLTrainingArguments
@@ -151,7 +152,7 @@ class VanillaTrainer:
 
                 self.model.backward(loss)
                 self.model.step()
-            self.save_model(task_name, epoch, f"loss_{loss.item():.4f}")
+            self.save_model(task_name, epoch)
             
              
     def continual_learning(self):
