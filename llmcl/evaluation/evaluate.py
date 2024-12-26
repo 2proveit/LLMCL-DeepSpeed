@@ -3,6 +3,7 @@ from metrics import (
     eval_20Minuten, eval_CStance, eval_FOMC, eval_MeetingBank, eval_numGLUE_cm, eval_numGLUE_ds, eval_Py150, eval_ScienceQA
 )
 import json
+import pandas as pd
 from pathlib import Path
 eval_fn = {
     "C-STANCE": eval_CStance,
@@ -79,7 +80,19 @@ def main(json_path):
     print(json.dumps(result, indent=4))
     with open(json_path.joinpath('result.json'), 'w', encoding='utf-8') as f:
         f.write(json.dumps(result, ensure_ascii=False, indent=4))
-
+    
+    df = pd.DataFrame(index=list(ZERO_SHOT_PERFORMANCE.keys()), dtype=float)
+    for name in list(ZERO_SHOT_PERFORMANCE.keys()):
+        df[name] = [-1] * len(list(ZERO_SHOT_PERFORMANCE.keys()))
+    for train, test_set in result.items():
+        if train == 'over_all_performance':
+            continue
+        for test, val in test_set.items():
+            df.loc[train, test] = val
+    df = df.round(4)
+    df.to_csv(json_path.joinpath('result.csv'), index=True)
+    
+    
 if __name__ == "__main__":
     import fire
     fire.Fire(main)
