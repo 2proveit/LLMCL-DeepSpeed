@@ -31,8 +31,9 @@ def main():
 		tokenizer.pad_token = tokenizer.eos_token
 		model.resize_token_embeddings(len(tokenizer))
 	datasets: dict = get_datasets(args, tokenizer)
+	eval_datasets:dict = get_datasets(args, tokenizer, "eval")
 	
-	trainer = TRAINERS[args.cl_method](model, datasets, args, tokenizer)
+	trainer = TRAINERS[args.cl_method](model, datasets, args, tokenizer, eval_datasets=eval_datasets)
 	trainer.continual_learning()
 
 if __name__ == "__main__":

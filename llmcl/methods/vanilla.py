@@ -23,15 +23,18 @@ class VanillaTrainer:
                  datasets:Dict[str, Dataset], 
                  args:CLTrainingArguments, 
                  tokenizer:PreTrainedTokenizerBase,
+                 **kwargs
                 ):
         self.model = model
         self.tokenizer = tokenizer
         self.datasets = datasets
+        self.eval_datasets = kwargs.get("eval_datasets", None)
         self.args = args
         self.optimizer = None
         self.lr_scheduler = None
         self.train_loader = None
         self.dataloaders:Dict[str, DataLoader] = {}
+        self.eval_dataloaders:Dict[str, DataLoader] = {}
         self.update_steps:int=-1
         self.global_steps:int=-1
         
@@ -47,6 +50,18 @@ class VanillaTrainer:
                 batch_size=self.args.per_device_train_batch_size,
                 collate_fn=Collector()
             )
+        if self.eval_datasets:
+            for task, eval_dataset in self.eval_datasets.items():
+                eval_sampler = DistributedSampler(eval_dataset)
+                self.eval_dataloaders[task] = DataLoader(
+                    dataset=eval_dataset,
+                    sampler=eval_sampler,
+                    batch_size=self.args.per_device_eval_batch_size,
+                    collate_fn=Collector()
+                )
+            self.args.do_eval=True
+        else:
+            self.args.do_eval=False
     
     
     def _get_optim_lr_scheduler(self) -> tuple:
@@ -125,7 +140,24 @@ class VanillaTrainer:
         if self.args.local_rank in [-1, 0]:
            save_model_tokenizer(model=self.model, tokenizer=self.tokenizer, output_dir=save_dir) 
         # TODO: check if it is zero-3 stage 
-     
+    
+    @torch.no_grad()
+    def eval_step(self, eval_dataloader:DataLoader):
+        eval_tqdm_bar = tqdm.tqdm(self.update_steps, desc=f"Evalating...", disable=not self.args.local_rank in [-1, 0]) 
+        eval_loss  = 0
+        for eval_step, eval_batch in enumerate(eval_dataloader):
+            eval_batch = {k:v.to(self.args.device) for k, v in eval_batch.items()}
+            eval_model_outputs = self.model(**eval_batch)
+            eval_loss += eval_model_outputs.loss
+            if self.args.local_rank == 0:
+                eval_tqdm_bar.update(1)
+
+        eval_loss /= len(eval_dataloader)
+        torch.distributed.all_reduce(eval_loss, torch.distributed.ReduceOp.SUM)
+        eval_loss /= torch.distributed.get_world_size()
+        return eval_loss.item()
+
+
     def train_task(self, task_name:str, dataloader:DataLoader):
         tqdm_bar = tqdm.tqdm(self.update_steps, desc=f"Training {task_name}", disable=not self.args.local_rank in [-1, 0])  
         task_step = -1
@@ -141,9 +173,14 @@ class VanillaTrainer:
                 loss = model_outputs.loss
                 task_step += 1
                 self.global_steps += 1
-                self.writer.add_scalar(f'Loss/{task_name}', loss.item(), task_step)
-                self.writer.add_scalar('Loss', loss.item(), self.global_steps)
+                self.writer.add_scalar(f'Train/Loss/{task_name}', loss.item(), task_step)
+                self.writer.add_scalar('Train/Loss', loss.item(), self.global_steps)
                 self.writer.add_scalar(f'Lr', self.lr_scheduler.get_lr()[0], self.global_steps)
+
+                if self.args.do_eval and (step+1)%self.args.eval_steps == 0:
+                    eval_loss = self.eval_step(self.eval_dataloaders[task_name])
+                    if hasattr(self, "writer"):
+                        self.writer.add_scalar("Eval/Loss", eval_loss, self.global_steps)
 
                 if self.args.global_rank == 0:
                     tqdm_bar.update(1)
