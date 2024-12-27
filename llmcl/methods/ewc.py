@@ -17,8 +17,10 @@ class EWCTrainer(VanillaTrainer):
     def __init__(self, model: Union[torch.nn.Module, AutoModel],
                  datasets: Dict[str, Dataset],
                  args: CLTrainingArguments,
-                 tokenizer: PreTrainedTokenizerBase):
-        super().__init__(model, datasets, args, tokenizer)
+                 tokenizer: PreTrainedTokenizerBase,
+                 **kwargs
+                ):
+        super().__init__(model, datasets, args, tokenizer, **kwargs)
         self.ewc_lambda = self.args.ewc_lambda
         self.prior = {}
         self.fisher = {}
@@ -27,8 +29,6 @@ class EWCTrainer(VanillaTrainer):
         
     def save_grad(self, name):
         def hook(grad):
-            # if torch.all(grad.eq(0)):
-            #     logger.info(f"name: {name} is all zero !!!")
             grad = torch.nan_to_num(grad, nan=0.0) 
             self.grads[name] = grad.detach().clone().to(self.args.device)
         return hook
@@ -55,10 +55,6 @@ class EWCTrainer(VanillaTrainer):
         for n, p in self.model.module.named_parameters():
             if n in self.fisher:
                 p_weight = safe_get_full_fp32_param(p)
-                # if torch.equal(p_weight, self.prior[n]):
-                #     logger.warning(f"name: {n} weight same as prior")
-                # if torch.all(self.fisher[n].eq(0)):
-                #     logger.warning(f"name: {n} fisher all zero")
                 ewc_reg_loss += (self.fisher[n] * (p_weight - self.prior[n]).pow(2)).sum() * self.ewc_lambda / 2
         self.ewc_loss = ewc_reg_loss.item()
         return ewc_reg_loss
@@ -70,6 +66,7 @@ class EWCTrainer(VanillaTrainer):
             if p.requires_grad:
                 self.prior[n] = p.detach().clone().data.to(self.args.device)
      
+
     @override
     def _at_back_propagation(self, task: str):
         for n, p in self.model.module.named_parameters():
@@ -78,6 +75,7 @@ class EWCTrainer(VanillaTrainer):
                     # if torch.all(self.grads[n].eq(0)):
                     #     logger.error(f"n: {n} grads is none!!")
                     self.fisher[n] += self.grads[n] ** 2 / len(self.dataloaders[task])  # 更新 Fisher 信息
+
 
     @override
     def train_task(self, task_name:str, dataloader:DataLoader):
@@ -97,14 +95,19 @@ class EWCTrainer(VanillaTrainer):
 
                 task_step += 1
                 self.global_steps += 1
-                self.writer.add_scalar(f'Loss/{task_name}', loss.item(), task_step)
-                self.writer.add_scalar(f'ewc_Loss/{task_name}', ewc_reg_loss.item(), task_step)
-                self.writer.add_scalars('Loss', {
+                self.writer.add_scalar(f'Train/Loss/{task_name}', loss.item(), task_step)
+                self.writer.add_scalar(f'Train/ewc_Loss/', ewc_reg_loss.item(), self.global_steps)
+                self.writer.add_scalar(f'Train/ewc_Loss/{task_name}', ewc_reg_loss.item(), task_step)
+                self.writer.add_scalars('Train/Loss', {
                     'loss': loss.item(),
                     'ewc_loss': ewc_reg_loss.item(),
                 }, self.global_steps)
-                self.writer.add_scalar(f'ewc_Loss/global', ewc_reg_loss.item(), self.global_steps)
                 self.writer.add_scalar(f'Lr', self.lr_scheduler.get_lr()[0], self.global_steps)
+
+                if self.args.do_eval and (step+1)%self.args.eval_steps == 0:
+                    eval_loss = self.eval_step(self.eval_dataloaders[task_name])
+                    if hasattr(self, "writer"):
+                        self.writer.add_scalar("Eval/Loss", eval_loss, self.global_steps)
 
                 if self.args.global_rank == 0:
                     tqdm_bar.update(1)
@@ -118,6 +121,7 @@ class EWCTrainer(VanillaTrainer):
             self.save_model(task_name, epoch)
         self._at_task_end()
             
+
     @override 
     def continual_learning(self):
         self._init_train_dataloader()
