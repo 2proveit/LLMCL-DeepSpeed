@@ -118,7 +118,7 @@ class GEMTrainer(VanillaTrainer):
                 self.model.backward(loss)
                 self.model.step()
 
-            self.save_model(task_name, epoch, desc=f"loss_{loss.item():.4f}")
+            self.save_model(task_name, epoch)
             
     @override 
     def continual_learning(self):
