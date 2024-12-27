@@ -19,7 +19,7 @@ def main():
     args = get_args()
     lora_config_path = Path(args.lora_path).joinpath('adapter_config.json')
     Path(args.save_path).mkdir(parents=True, exist_ok=True)
-    assert lora_config_path.exists()
+    assert lora_config_path.exists(), f"path: {lora_config_path} not exists"
 
     with open(lora_config_path, 'r') as f:
         lora_config = json.loads(f.read())

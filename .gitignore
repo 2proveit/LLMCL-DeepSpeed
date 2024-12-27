@@ -6,3 +6,4 @@ __pycache__/
 logs/
 infer_output/
 infer_output2/
+merged/
