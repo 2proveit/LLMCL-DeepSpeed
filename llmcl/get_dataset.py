@@ -32,29 +32,43 @@ def format_data(data: Dict, chat: bool = False) -> Tuple[str, str]:
 		Tuple[str, str]: {prompt:str, answer:str}
 	"""
 	if not chat:
-		if data.get('input', None):
-			prompt = "Instruction:\n" + data.get('instruction') + "\n" + "Input:\n" + data.get('input') + "\nOutput:\n"
-		else:
-			prompt = "Input\n" + data.get('prompt') + "\nOutput:\n"
+		instruction = data.get('instruction', '')
+		input_text = data.get('input')
+		prompt = (
+      		f"Instruction:\n{instruction}\nInput:\n{input_text}\nOutput:\n"
+			if input_text else f"Input:\n{input_text}\nOutput:\n"
+        )
 		return prompt, data.get('answer')
 	else: # TODO
 		raise NotImplementedError("Chat format not implemented yet.")
 
 
-def tokenize_data(tokenizer: PreTrainedTokenizerBase, max_length: int = 2048) -> Callable[
-	[Dict], Dict[str, torch.Tensor]]:
-	def tokenize(data: Dict) -> Dict[str, torch.Tensor]:
-		prompt, output = format_data(data)
-		tokenized = tokenizer(prompt + output, return_tensors="pt", padding='max_length', max_length=max_length, truncation=True)
-		labels = tokenized['input_ids'].clone()[0]
-		prompt_len = len(tokenizer(prompt)['input_ids'])
-		labels[:prompt_len] = -100  # ignore loss for prompt tokens
-		return dict(
-			input_ids=tokenized['input_ids'].squeeze(),
-			attention_mask=tokenized['attention_mask'].squeeze(),
-			labels=labels.squeeze()
-		)
-	return tokenize
+def tokenize_data(tokenizer: PreTrainedTokenizerBase, max_length: int = 2048) -> Callable[[Dict], Dict[str, torch.Tensor]]:
+    def tokenize(data: Dict) -> Dict[str, torch.Tensor]:
+        prompt, output = format_data(data)
+        
+        # Tokenize prompt and output separately
+        prompt_tokens = tokenizer(prompt, add_special_tokens=False, return_tensors="pt", padding=False, truncation=True, max_length=max_length)
+        output_tokens = tokenizer(output, add_special_tokens=False, return_tensors="pt", padding=False, truncation=True, max_length=max_length - len(prompt_tokens['input_ids'][0]))
+        
+        # Concatenate tokens
+        input_ids = torch.cat([prompt_tokens['input_ids'][0], output_tokens['input_ids'][0]])
+        attention_mask = torch.cat([prompt_tokens['attention_mask'][0], output_tokens['attention_mask'][0]])
+        
+        # Create labels with -100 for prompt tokens
+        labels = torch.cat([torch.full_like(prompt_tokens['input_ids'][0], -100), output_tokens['input_ids'][0]])
+        
+        # Truncate to max_length
+        input_ids = input_ids[:max_length]
+        attention_mask = attention_mask[:max_length]
+        labels = labels[:max_length]
+        
+        return dict(
+            input_ids=input_ids,
+            attention_mask=attention_mask,
+            labels=labels
+        )
+    return tokenize
 
 
 def get_dataset(data_dir: Union[Path, str], tokenizer: PreTrainedTokenizerBase, max_length: int = 2048) -> Dataset:
