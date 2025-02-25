@@ -2,11 +2,13 @@ import datetime
 import concurrent
 import json
 import os
+import argparse
+import tqdm
 from typing import List
 import requests
 import logging
 from datasets import Dataset
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s')
 logger = logging.getLogger(__name__)
 
 class APIClient:
@@ -44,7 +46,7 @@ class APIClient:
                 )
                 for prompt in prompts
             ]
-            for future in concurrent.futures.as_completed(futures):
+            for future in tqdm.tqdm(concurrent.futures.as_completed(futures), total=len(futures)):
                 try:
                     results.append(future.result())
                 except Exception as e:
@@ -69,42 +71,56 @@ def infer_task(client:APIClient, dataset,task_name, save_path:str):
     
     task_results = []
     for i in range(len(prompts)):
-        task_results.append(dict(
-            prompt=prompts[i],
-            response=responses[i]['choices'][0]['text'],
-            answer=answers[i]
-        ))
+        try:
+            task_results.append(dict(
+                prompt=prompts[i],
+                response=responses[i]['choices'][0]['text'],
+                answer=answers[i]
+            ))
+        except Exception as e:
+            logger.warning(e)
     
     os.makedirs(save_path, exist_ok=True)
     with open(os.path.join(save_path, f"{task_name}.jsonl"), 'w', encoding='utf-8') as f:
         for res in task_results:
             f.write(json.dumps(res, ensure_ascii=False)+'\n')
 
-METHOD='ewc'
-ADAPTER_WEIGHT_PATHS = {
-        "C-STANCE": f"output2/{METHOD}/{METHOD}_C-STANCE_round_2_desc_",
-        "FOMC": "output2/{METHOD}/{METHOD}_FOMC_round_2_desc_",
-        "MeetingBank": f"output2/{METHOD}/{METHOD}_MeetingBank_round_2_desc_",
-        "Py150": f"output2/{METHOD}/{METHOD}_Py150_round_2_desc_",
-        "ScienceQA": f"output2/{METHOD}/{METHOD}_ScienceQA_round_2_desc_",
-        "NumGLUE-cm": f"output2/{METHOD}/{METHOD}_NumGLUE-cm_round_2_desc_",
-        "NumGLUE-ds": f"output2/{METHOD}/{METHOD}_NumGLUE-ds_round_2_desc_",
-        "20Minuten": f"output2/{METHOD}/{METHOD}_20Minuten_round_2_desc_",
-    }
-DATA_PATH = "data/TRACE-Benchmark/LLM-CL-Benchmark_5000"
+def arg_parse():
+    parser = argparse.ArgumentParser("API inference")
+    parser.add_argument('--method')
+    parser.add_argument('--port')
+    return parser.parse_args()
 
-OUTPUT_PATH = f'infer_output2/{METHOD}'
-BASE_URL = 'http://localhost:8803/v1'
-model_name=f'{METHOD}_' 
+def main():
+    args = arg_parse()
+    METHOD=args.method
+    ADAPTER_WEIGHT_PATHS = {
+            "C-STANCE": f"output2/{METHOD}/{METHOD}_C-STANCE_round_2_desc_",
+            "FOMC": "output2/{METHOD}/{METHOD}_FOMC_round_2_desc_",
+            "MeetingBank": f"output2/{METHOD}/{METHOD}_MeetingBank_round_2_desc_",
+            "Py150": f"output2/{METHOD}/{METHOD}_Py150_round_2_desc_",
+            "ScienceQA": f"output2/{METHOD}/{METHOD}_ScienceQA_round_2_desc_",
+            "NumGLUE-cm": f"output2/{METHOD}/{METHOD}_NumGLUE-cm_round_2_desc_",
+            "NumGLUE-ds": f"output2/{METHOD}/{METHOD}_NumGLUE-ds_round_2_desc_",
+            "20Minuten": f"output2/{METHOD}/{METHOD}_20Minuten_round_2_desc_",
+        }
+    DATA_PATH = "data/TRACE-Benchmark/LLM-CL-Benchmark_5000"
+
+    OUTPUT_PATH = f'infer_output_14b/{METHOD}'
+    BASE_URL = f'http://localhost:{args.port}/v1'
+    model_name=f'{METHOD}_' 
 
 
-for task_name, adapter_path in {"20Minuten": f"output2/{METHOD}/{METHOD}_20Minuten_round_2_desc_"}.items():
-    client = APIClient(url=BASE_URL, model_name=model_name+task_name)
-    for dataset_name in ADAPTER_WEIGHT_PATHS.keys():
-        dataset = load_dataset(os.path.join(DATA_PATH, dataset_name, 'test.json'))
-        if os.path.exists(os.path.join("{OUTPUT_PATH}/train_{task_name}", f"{dataset_name}.jsonl")):
-            logger.info(f"skip train: {task_name}, infer: {dataset_name}")
-            continue
-        logger.info(f"method: {METHOD}, train: {task_name}, infer: {dataset_name} inference .......") 
-        task_results = infer_task(client=client, dataset=dataset, task_name=dataset_name, save_path=f"{OUTPUT_PATH}/train_{task_name}")
-        logger.info(f"method: {METHOD}, train: {task_name}, infer: {dataset_name} inference finished")
+    for task_name, adapter_path in ADAPTER_WEIGHT_PATHS.items():
+        client = APIClient(url=BASE_URL, model_name=model_name+task_name)
+        for dataset_name in ADAPTER_WEIGHT_PATHS.keys():
+            dataset = load_dataset(os.path.join(DATA_PATH, dataset_name, 'test.json'))
+            if os.path.exists(os.path.join("{OUTPUT_PATH}/train_{task_name}", f"{dataset_name}.jsonl")):
+                logger.info(f"skip train: {task_name}, infer: {dataset_name}")
+                continue
+            logger.info(f"method: {METHOD}, train: {task_name}, infer: {dataset_name} inference .......") 
+            task_results = infer_task(client=client, dataset=dataset, task_name=dataset_name, save_path=f"{OUTPUT_PATH}/train_{task_name}")
+            logger.info(f"method: {METHOD}, train: {task_name}, infer: {dataset_name} inference finished")
+
+if __name__ == "__main__":
+    main()

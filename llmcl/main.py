@@ -5,7 +5,6 @@ import torch.distributed
 from methods import TRAINERS
 from train import get_train_args
 from get_dataset import get_datasets
-
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
@@ -33,8 +32,14 @@ def main():
 	datasets: dict = get_datasets(args, tokenizer)
 	eval_datasets:dict = get_datasets(args, tokenizer, "eval")
 	
-	trainer = TRAINERS[args.cl_method](model, datasets, args, tokenizer, eval_datasets=eval_datasets)
-	trainer.continual_learning()
+	if args.cl_method == 'one':
+		from llmcl.methods import VanillaTrainer
+		for name, dataset in datasets.items():
+			trainer = VanillaTrainer(model=model, datasets={name:dataset}, args=args, tokenizer=tokenizer, eval_datasets={name:eval_datasets[name]})
+			trainer.continual_learning()
+	else:
+		trainer = TRAINERS[args.cl_method](model, datasets, args, tokenizer, eval_datasets=eval_datasets)
+		trainer.continual_learning()
 
 if __name__ == "__main__":
 	main()

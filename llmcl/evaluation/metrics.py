@@ -6,7 +6,7 @@ import re
 def eval_CStance(response:List, answers:List):
     num_correct = 0
     for i, resp in enumerate(response):
-        if resp[0] in ['A', 'B', 'C', 'D'] and resp[0] == answers[i]:
+        if resp and resp[0] in ['A', 'B', 'C', 'D'] and resp[0] == answers[i]:
             num_correct += 1
         
     return num_correct / len(response)
@@ -14,7 +14,7 @@ def eval_CStance(response:List, answers:List):
 def eval_FOMC(response:List, answers:List):
     num_correct = 0
     for i, resp in enumerate(response):
-        if resp[0] in ['A', 'B', 'C', 'D'] and resp[0] == answers[i]:
+        if resp and resp and resp[0] in ['A', 'B', 'C', 'D'] and resp[0] == answers[i]:
             num_correct += 1
         
     return num_correct / len(response)
@@ -27,6 +27,8 @@ def eval_MeetingBank(response:List, answers:List):
             res.append(rouger.get_scores(hyps=resp, refs=ans)[0]['rouge-l']['p'])
         except:
             print(resp,'\n', ans)
+    if len(res) == 0:
+        return 0
     return sum(res) / len(res)
 
 
@@ -55,6 +57,8 @@ def eval_Py150(response, answers:List):
 def eval_ScienceQA(response, answers):
     num_correct = 0
     for res, ans in zip(response, answers):
+        if not res:
+            continue
         if res[0] in ['A', 'B', 'C', 'D'] and ans[0] in ['A', 'B', 'C', 'D']:
             if res[0] == ans[0]:
                 num_correct += 1
@@ -86,5 +90,8 @@ def eval_numGLUE_ds(response, answers):
 def eval_20Minuten(response, answers):
     res = []
     for resp, ans in zip(response, answers):
-        res.append(rouger.get_scores(hyps=resp, refs=ans)[0]['rouge-l']['p'])
+        if len(resp.strip()) < 2:
+            res.append(0)
+        else:
+            res.append(rouger.get_scores(hyps=resp, refs=ans, ignore_empty=True)[0]['rouge-l']['p'])
     return sum(res) / len(res)
