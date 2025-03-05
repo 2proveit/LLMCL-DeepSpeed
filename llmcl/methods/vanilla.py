@@ -48,7 +48,7 @@ class VanillaTrainer:
                 dataset=dataset,
                 sampler=sampler,
                 batch_size=self.args.per_device_train_batch_size,
-                collate_fn=Collector()
+                collate_fn=Collector(self.tokenizer)
             )
         if self.eval_datasets:
             for task, eval_dataset in self.eval_datasets.items():
@@ -57,9 +57,10 @@ class VanillaTrainer:
                     dataset=eval_dataset,
                     sampler=eval_sampler,
                     batch_size=self.args.per_device_eval_batch_size,
-                    collate_fn=Collector()
+                    collate_fn=Collector(self.tokenizer),
+                    drop_last=True
                 )
-            self.args.do_eval=True
+            self.args.do_eval=(True and self.args.do_eval)
         else:
             self.args.do_eval=False
     
@@ -74,10 +75,10 @@ class VanillaTrainer:
         )
         assert self.dataloaders, "self.datloaders is null"
         self.update_steps = math.ceil(sum(len(train_loader) * self.args.num_train_epochs / self.args.gradient_accumulation_steps for train_loader in self.dataloaders.values()))
-        lr_scheduler =  get_cosine_schedule_with_warmup(
+        lr_scheduler =  get_constant_schedule_with_warmup(
             optimizer=optimizer,
             num_warmup_steps=max(10, int(self.update_steps * self.args.warmup_ratio)),
-            num_training_steps=self.update_steps
+            # num_training_steps=self.update_steps
         )
         return optimizer, lr_scheduler
         

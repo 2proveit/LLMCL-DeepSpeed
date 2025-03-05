@@ -18,6 +18,7 @@ def parse_args():
     parser.add_argument('--adapter_path', type=str)
     parser.add_argument('--save_path', type=str)
     parser.add_argument('--tp', type=int, default=4, help='tensor paralle size for vllm')
+    parser.add_argument('--gpu_memory_utilization', type=float, default=0.8)
     parser.add_argument('--dataset_names', nargs='+', default=None)
     parser.add_argument('--data_path', type=str)
     parser.add_argument('--base_model_path', type=str, default=None)
@@ -35,7 +36,7 @@ def get_method(path:Path, methods:list):
 
 def get_train_dataset_name(path:Path, dataset_names:list):
     path = str(path.parts[-1])
-    pattern = r'(' + '|'.join(re.escape(data_name) for data_name in dataset_names) + r')'
+    pattern = r'(' + '|'.join(re.escape(data_name) for data_name in dataset_names+['MTL']) + r')'
     match = re.search(pattern, path)
     if match:
         return match.group(0).strip()
@@ -43,13 +44,8 @@ def get_train_dataset_name(path:Path, dataset_names:list):
         raise ValueError(f"Can not match any of {dataset_names} for {path}")
 
 def prepare_dataset(example):
-    instruction = example.get('instruction', '')
     input_text = example.get('prompt', '')
-    prompt = (
-        f"Instruction:\n{instruction}\nInput:\n{input_text}\nOutput:\n"
-        if input_text else f"Input:\n{input_text}\nOutput:\n"
-    )
-    example['input_prompt'] = prompt
+    example['input_prompt'] = input_text
     example['message'] = [{"role": 'user', "content": input_text}]
     return example
 
@@ -58,25 +54,28 @@ def main():
     args:argparse.Namespace = parse_args()
     assert Path(args.adapter_path).exists(), "Adater path not found"
 
-    adapers = []
+    adapters = []
     for folder in Path(args.adapter_path).rglob("*"):
         if folder.is_dir() and folder.joinpath("adapter_config.json").is_file():
             try:
                 method = get_method(folder, supprted_methods)
                 train_dataset_name = get_train_dataset_name(folder, args.dataset_names)
             except:
+                logger.warning("get method and train dataset name failed")
                 continue
             logger.info(f"path: {str(folder)}\t method: {method}\t train_dataset: {train_dataset_name}")
-            adapers.append(dict(
+            adapters.append(dict(
                 adapter_path=folder,
                 method=method,
                 train_dataset_name=train_dataset_name
             ))
     
-    # TODO: add filter for adapters
+    adapters = [adapter_info for adapter_info in adapters if 'round_2' in str(adapter_info['adapter_path'])]
+    logger.info(f"Num adapters: {len(adapters)}")
     
-    
-    with adapers[0]['adapter_path'].joinpath("adapter_config.json").open('r') as f:
+    if len(adapters) == 0:
+        raise FileNotFoundError("No adapters was found!")
+    with adapters[0]['adapter_path'].joinpath("adapter_config.json").open('r') as f:
         base_model_path = json.loads(f.read())['base_model_name_or_path']
 
     if not Path(base_model_path).exists():
@@ -85,9 +84,9 @@ def main():
         else:
             raise ValueError("base model path in config file not exists, please specify a base model path in CLI")
     
-    vllm_model = LLM(model=base_model_path, tensor_parallel_size=args.tp, enable_lora=True)
+    vllm_model = LLM(model=base_model_path, tensor_parallel_size=args.tp, enable_lora=True, gpu_memory_utilization=args.gpu_memory_utilization)
     
-    for i, adapter_info in enumerate(adapers):
+    for i, adapter_info in enumerate(adapters):
         train_dataset_name = adapter_info.get("train_dataset_name")
         adapter_path = adapter_info.get("adapter_path")
         method = adapter_info.get("method")

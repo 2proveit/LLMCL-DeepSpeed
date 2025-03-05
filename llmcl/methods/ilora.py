@@ -10,7 +10,7 @@ from torch.utils.tensorboard import SummaryWriter
 from llmcl.utils import save_model_tokenizer, get_grouped_parameters
 from typing import Union
 from transformers import AutoModel, get_cosine_schedule_with_warmup,get_constant_schedule_with_warmup, PreTrainedTokenizerBase
-from deepspeed.ops.adam import FusedAdam
+from .vanilla import VanillaTrainer
 from datasets import Dataset
 from llmcl.train.get_args import CLTrainingArguments
 from llmcl.get_dataset import Collector
@@ -64,7 +64,7 @@ class Buffer:
             "labels": labels.to("cuda")
         }
 
-class ILoraTrainer:
+class ILoraTrainer(VanillaTrainer):
     def __init__(self, model:Union[torch.nn.Module, AutoModel],
                  datasets:Dict[str, Dataset], 
                  args:CLTrainingArguments, 
@@ -88,48 +88,7 @@ class ILoraTrainer:
         self.consistency_loss=nn.MSELoss()
         self.reg_weight=0.5
 
-    def _init_train_dataloader(self) -> None:
-        """process dataloader for each task"""
-        self.writer = SummaryWriter(log_dir=self.args.logging_dir)
-        for task, dataset in self.datasets.items():
-            sampler = DistributedSampler(dataset)
-            self.dataloaders[task] = DataLoader(
-                dataset=dataset,
-                sampler=sampler,
-                batch_size=self.args.per_device_train_batch_size,
-                collate_fn=Collector()
-            )
-        if self.eval_datasets:
-            for task, eval_dataset in self.eval_datasets.items():
-                eval_sampler = DistributedSampler(eval_dataset)
-                self.eval_dataloaders[task] = DataLoader(
-                    dataset=eval_dataset,
-                    sampler=eval_sampler,
-                    batch_size=self.args.per_device_eval_batch_size,
-                    collate_fn=Collector()
-                )
-            self.args.do_eval=True
-        else:
-            self.args.do_eval=False
     
-    
-    def _get_optim_lr_scheduler(self) -> tuple:
-        """make sure you initilized the train loader and model for your current task"""
-        optimize_grouped_params = self.model.parameters()
-        optimizer = FusedAdam(
-            optimize_grouped_params,
-            lr=self.args.learning_rate,
-            weight_decay=self.args.weight_decay
-        )
-        assert self.dataloaders, "self.datloaders is null"
-        self.update_steps = math.ceil(sum(len(train_loader) * self.args.num_train_epochs / self.args.gradient_accumulation_steps for train_loader in self.dataloaders.values()))
-        lr_scheduler =  get_cosine_schedule_with_warmup(
-            optimizer=optimizer,
-            num_warmup_steps=max(10, int(self.update_steps * self.args.warmup_ratio)),
-            num_training_steps=self.update_steps
-        )
-        return optimizer, lr_scheduler
-        
         
     def _init_model(self) -> None:
         self.model = get_peft_model(self.model, peft_config=self.args.lora_config, adapter_name="fast")
@@ -159,40 +118,6 @@ class ILoraTrainer:
         )
 
     
-    def _initilize_deepspeed(self) -> None:
-        optimizer, lr_scheduler = self._get_optim_lr_scheduler()
-
-        with open(self.args.deepspeed_config, 'r') as f:
-            ds_config = json.loads(f.read())
-        ds_config["train_micro_batch_size_per_gpu"]= self.args.per_device_train_batch_size
-        ds_config["gradient_accumulation_steps"]= self.args.gradient_accumulation_steps
-        ds_config['train_batch_size'] = self.args.per_device_train_batch_size * self.args.gradient_accumulation_steps * self.args.world_size
-        ds_config['steps_per_print'] = self.args.logging_steps
-
-        self.model, self.optimizer, _, self.lr_scheduler = deepspeed.initialize(
-            model=self.model,
-            optimizer=optimizer,
-            lr_scheduler=lr_scheduler,
-            config=ds_config,
-            dist_init_required=True,
-        )
-        logger.info("** deepspeed initilized!")
-        
-    def _at_task_begin(self, task:str): 
-        pass
-
-    def _at_task_end(self, task:str):
-        pass
-
-    def _at_back_propagation(self, task:str):
-        pass
-             
-    def save_model(self, task:str, epoch:int, desc:str=''):
-        save_dir = os.path.join(self.args.output_dir, f"{self.args.cl_method}_{task}_round_{epoch}_desc_{desc}")
-        logger.info(f"Saving to: {save_dir}")
-        if self.args.local_rank in [-1, 0]:
-           save_model_tokenizer(model=self.model, tokenizer=self.tokenizer, output_dir=save_dir) 
-        # TODO: check if it is zero-3 stage 
     
     @torch.no_grad()
     def eval_step(self, eval_dataloader:DataLoader):
@@ -272,12 +197,3 @@ class ILoraTrainer:
                             p.data = copied_fast_modules[n.replace('slow', 'fast')] * lambd + (1 - lambd) * p.data.detach()
             self.save_model(task_name, epoch)
             
-             
-    def continual_learning(self):
-        self._init_train_dataloader()
-        self._init_model()
-        self._initilize_deepspeed()
-        for i, (task_name, train_loader) in enumerate(self.dataloaders.items()):
-            self.train_task(task_name, train_loader)
-        self._log_hparams()
-        self.writer.close()
