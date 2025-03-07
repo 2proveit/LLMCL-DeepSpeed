@@ -11,7 +11,7 @@ from datasets import Dataset
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-supprted_methods=['vanilla', 'ewc', 'gem', 'agem', 'l2p', 'pp', 'mtl', 'one']
+supprted_methods=['vanilla', 'ewc', 'gem', 'agem', 'l2p', 'pp', 'mtl', 'one', 'ilora']
 
 def parse_args():
     parser = argparse.ArgumentParser("inference for multi lora modules")
@@ -35,7 +35,7 @@ def get_method(path:Path, methods:list):
         raise ValueError(f"Can not match any of {methods} for {path}")
 
 def get_train_dataset_name(path:Path, dataset_names:list):
-    path = str(path.parts[-1])
+    path = str(path.parts[-2:])
     pattern = r'(' + '|'.join(re.escape(data_name) for data_name in dataset_names+['MTL']) + r')'
     match = re.search(pattern, path)
     if match:
@@ -58,10 +58,12 @@ def main():
     for folder in Path(args.adapter_path).rglob("*"):
         if folder.is_dir() and folder.joinpath("adapter_config.json").is_file():
             try:
+                if 'slow' in str(folder):
+                    continue
                 method = get_method(folder, supprted_methods)
                 train_dataset_name = get_train_dataset_name(folder, args.dataset_names)
             except:
-                logger.warning("get method and train dataset name failed")
+                logger.warning(f"get method and train dataset name failed for {folder}")
                 continue
             logger.info(f"path: {str(folder)}\t method: {method}\t train_dataset: {train_dataset_name}")
             adapters.append(dict(
