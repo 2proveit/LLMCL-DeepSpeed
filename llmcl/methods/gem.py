@@ -117,6 +117,7 @@ class GEMTrainer(VanillaTrainer):
 
                 self.model.backward(loss)
                 self.model.step()
+                torch.cuda.empty_cache()
 
             self.save_model(task_name, epoch)
             

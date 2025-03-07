@@ -17,30 +17,20 @@ def get_args():
 
 def main():
     args = get_args()
-    lora_config_path = Path(args.lora_path).joinpath('adapter_config.json')
-    Path(args.save_path).mkdir(parents=True, exist_ok=True)
-    assert lora_config_path.exists(), f"path: {lora_config_path} not exists"
+    from peft import PeftModel, PeftConfig
 
-    with open(lora_config_path, 'r') as f:
-        lora_config = json.loads(f.read())
+    base_model = AutoModelForCausalLM.from_pretrained(
+        args.base_model_path,
+        torch_dtype=torch.float16,
+        device_map="auto"
+    )
 
-    if Path(lora_config['base_model_name_or_path']).exists():
-        base_path = lora_config['base_model_name_or_path']
+    # config = PeftConfig.from_pretrained(args.lora_path)
+    model = PeftModel.from_pretrained(base_model, args.lora_path)
+    merged_model = model.merge_and_unload()
+
+    merged_model.save_pretrained("path/to/save/merged_model")
     
-    if args.base_model_path and Path(args.base_model_path).exists():
-        base_path = args.base_model_path
-
-    base_model = AutoModelForCausalLM.from_pretrained(base_path, torch_dtype=torch.float16)
-    lora_model = PeftModel.from_pretrained(base_model, args.lora_path)
-    print(type(lora_model))
-    merged_model = lora_model.merge_and_unload()
-    print(type(merged_model))
-    merged_model.save_pretrained(args.save_path)
-    # lora_model = PeftModel.from_pretrained(args.lora_path)
-    # print(type(lora_model))
-    # lora_model.merge_and_upload()
-    # print(type(lora_model))
-
 if __name__ == "__main__":
     main()
 
